@@ -59,9 +59,10 @@ class PostgresClient:
             # "sslmode": "verify-ca"
         }
 
-    def append(self, df: pd.DataFrame, table, schema=None):
+    def append(
+        self, df: pd.DataFrame, table: str, schema: str = None, chunksize: int = 1000
+    ):
         """Append data to existing table in chunks of 1_000.
-        On conflict, do nothing.
         Return number of rows inserted.
         """
 
@@ -72,7 +73,7 @@ class PostgresClient:
             con=self.engine,
             if_exists="append",
             index=False,
-            chunksize=1_000,
+            chunksize=chunksize,
             method="multi",
         )
         schema = "Public" if schema is None else schema
@@ -165,7 +166,7 @@ class PostgresClient:
 
         return engine
 
-    def _execute_sql(self, sql):
+    def _execute_sql(self, sql: str):
         """Execute sql statement against postgres rds database"""
         try:
             with self.engine.begin() as conn:
