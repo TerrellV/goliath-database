@@ -1,0 +1,5 @@
+boto3
+pandas
+keyring
+psycopg2-binary
+sqlalchemy
