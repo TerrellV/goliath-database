@@ -1,0 +1,1 @@
+KEYRING_SERVICE = 'goliath-database'

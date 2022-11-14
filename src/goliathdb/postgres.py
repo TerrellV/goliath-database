@@ -1,12 +1,19 @@
+# built in
 import logging
 import configparser
 from pathlib import Path
+import os
 
+# local
+from goliathdb.config import KEYRING_SERVICE
+
+# 3rd party
 import keyring
 import boto3
 import pandas as pd
 from sqlalchemy import create_engine
 import sqlalchemy
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -14,28 +21,64 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S %z",
     force=True,
 )
+
+s3 = boto3.client("s3")
+
 logger = logging.getLogger(__name__)
 config = configparser.ConfigParser()
-config_filepath = Path(__file__).parent / "config.ini"
-config.read(config_filepath)
-rds_config = config["RDS"]
+
+
+def download_from_s3(s3uri):
+    # s3://gcd-crypto-data/goliath_db_config.ini
+    local_config_path = Path().cwd() / "goliath_db_config.ini"
+    bucket = s3uri.split("/")[2]
+    key = '/'.join(s3uri.split("/")[3:])
+    with open(local_config_path, 'wb') as f:
+        r = s3.download_fileobj(
+            Bucket=bucket,
+            Key=key,
+            Fileobj=f
+        )
+    return str(local_config_path)
+
+
+def load_rds_config():
+    """Look for goliath db config ini file"""
+    try:
+        config_filepath = os.environ["GOLIATH_DB_CONFIG_PATH"]
+    except KeyError:
+        config_filepath = Path().cwd() / "goliath_db_config.ini"
+
+        if not config_filepath.is_file():
+            raise ValueError("unable to load goliath_db_config.ini. Either set the 'GOLIATH_DB_CONFIG_PATH' env variable or place the file in your cwd.")
+
+    # download config from s3
+    if str(config_filepath).startswith("s3://"):
+        config_filepath = download_from_s3(config_filepath)
+
+    config.read(config_filepath)
+    return config["RDS"]
+
+
+rds_config = load_rds_config()
 
 
 def get_db_password(username: str, db_config: dict):
     """Retrive temporary password for rds iam authentication."""
 
     client = boto3.client("rds")
-    is_main_user = username == db_config["admin_username"]
+    is_rds_admin = username == db_config["admin_username"]
 
-    if is_main_user:
-        password = keyring.get_password("gcd-rds", username)
+    if is_rds_admin:
+        password = keyring.get_password(KEYRING_SERVICE, "db_pw")
         if password is None:
             logger.error(
                 "\n\n\tYou've selected to use the admin rds username and password, but you have not set "
-                "a password via keyring. Set your password as folllows, then rerun.\n\n\t"
-                "import keyring\n\t\n",
-                username,
+                "a password via keyring.\n\tSet your password as folllows, then rerun."
+                "\nimport goliathdb as gd"
+                "\ngd.set_password()\n\t\n"
             )
+            raise ValueError("Unable to find admin password in keyring")
     else:
         logger.info("Getting temp rds auth token")
         password = client.generate_db_auth_token(
@@ -180,13 +223,13 @@ class PostgresClient:
             raise
 
 
-# if __name__ == "__main__":
-#     pg = PostgresClient("terrell")
-#     r = pg._execute_sql(
-#         """
-#         select *
-#         from market.trading_pairs
-#         """
-#     )
-#     print(r)
-#     pg.close()
+if __name__ == "__main__":
+    pg = PostgresClient(rds_config["admin_username"])
+    r = pg._execute_sql(
+        """
+        select *
+        from market.trading_pairs
+        """
+    )
+    print(r)
+    pg.close()
