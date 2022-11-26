@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-pip install git@github.com:TerrellV/goliath-database.git
+pip install git+https://github.com/TerrellV/goliath-database.git
 ```
 
 ## Defining db config file
